@@ -1,4 +1,84 @@
-# FFmpegKit ![GitHub release](https://img.shields.io/badge/release-v6.0-blue.svg) ![Maven Central](https://img.shields.io/maven-central/v/com.arthenica/ffmpeg-kit-min) ![CocoaPods](https://img.shields.io/cocoapods/v/ffmpeg-kit-ios-min) ![pub](https://img.shields.io/pub/v/ffmpeg_kit_flutter.svg) ![npm](https://img.shields.io/npm/v/ffmpeg-kit-react-native.svg)
+# 📦 FFmpeg AAR for Android (Support 16KB page size)
+
+Many developers find building the AAR from Athenica's original `ffmpeg-kit` source time-consuming or error-prone. This fork simplifies the process by:
+
+- Providing a fully working build command I've tested and used successfully.
+- Offering prebuilt AAR files for easy integration.
+- Applying minor source code tweaks to ensure smoother builds.
+- Pre-integrating the `smart-exception-java` libraries as required by `ffmpeg-kit`.
+
+---
+
+### 🔧 Option 1 – Build from Source
+
+You can build it directly and freely customize it further. However, the command I provided is already quite comprehensive (excluding the gnutls library, since Android doesn't require it).
+
+```
+./android.sh \
+  --enable-gpl \
+  --enable-libvidstab \
+  --enable-rubberband \
+  --enable-x264 \
+  --enable-x265 \
+  --enable-xvidcore \
+  --enable-android-media-codec \
+  --enable-android-zlib \
+  --enable-chromaprint \
+  --enable-dav1d \
+  --enable-fontconfig \
+  --enable-freetype \
+  --enable-fribidi \
+  --enable-kvazaar \
+  --enable-lame \
+  --enable-libass \
+  --enable-libiconv \
+  --enable-libilbc \
+  --enable-libtheora \
+  --enable-libvorbis \
+  --enable-libvpx \
+  --enable-libwebp \
+  --enable-libxml2 \
+  --enable-opencore-amr \
+  --enable-openh264 \
+  --enable-opus \
+  --enable-sdl \
+  --enable-shine \
+  --enable-snappy \
+  --enable-soxr \
+  --enable-speex \
+  --enable-tesseract \
+  --enable-twolame \
+  --enable-vo-amrwbenc \
+  --enable-zimg \
+  --enable-openssl \
+  --enable-srt \
+  --enable-gmp \
+  --enable-libaom \
+  --disable-x86 \
+  --disable-x86-64 \
+  --disable-arm-v7a-neon \
+  --api-level=28
+```
+
+--- 
+
+### 🔧 Option 2 – Use the prebuilt AAR file
+
+Skip the hassle and use the AAR files I’ve built and bundled with Smart Exception support.
+
+**📥 Download:**
+
+Go to the [`built-aar`](./built-aar) directory to grab the AAR files.
+
+**✅ Features:**
+
+- Supports **API level 28+**
+- Architectures: `armeabi-v7a`, `arm64-v8a`
+- Pre-integrated with `smart-exception-java`
+
+---
+  
+# FFmpegKit
 
 <img src="https://github.com/arthenica/ffmpeg-kit/blob/main/docs/assets/ffmpeg-kit-icon-v9.png" width="240">
 
