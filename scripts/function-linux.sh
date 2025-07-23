@@ -25,7 +25,7 @@ libraries are created under the prebuilt folder.\n"
   echo -e "Usage: ./$COMMAND [OPTION]...\n"
   echo -e "Specify environment variables as VARIABLE=VALUE to override default build options.\n"
 
-  display_help_options "  -l, --lts\t\t\tbuild lts packages to support older devices"
+  display_help_options "      --jobs=N\t\t\tnumber of jobs to run [auto]"
   display_help_licensing
 
   echo -e "Architectures:"
@@ -83,11 +83,7 @@ libraries are created under the prebuilt folder.\n"
 }
 
 enable_main_build() {
-  unset FFMPEG_KIT_LTS_BUILD
-}
-
-enable_lts_build() {
-  export FFMPEG_KIT_LTS_BUILD="1"
+  local _TMP
 }
 
 install_pkg_config_file() {
@@ -98,14 +94,12 @@ install_pkg_config_file() {
   # DELETE OLD FILE
   rm -f "$DESTINATION" 2>>"${BASEDIR}"/build.log
   if [[ $? -ne 0 ]]; then
-    echo -e "failed\n\nSee build.log for details\n"
     exit 1
   fi
 
   # INSTALL THE NEW FILE
   cp "$SOURCE" "$DESTINATION" 2>>"${BASEDIR}"/build.log
   if [[ $? -ne 0 ]]; then
-    echo -e "failed\n\nSee build.log for details\n"
     exit 1
   fi
 
@@ -115,12 +109,7 @@ install_pkg_config_file() {
 }
 
 get_bundle_directory() {
-  local LTS_POSTFIX=""
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    LTS_POSTFIX="-lts"
-  fi
-
-  echo "bundle-linux${LTS_POSTFIX}"
+  echo "bundle-linux"
 }
 
 create_linux_bundle() {
@@ -165,8 +154,7 @@ create_linux_bundle() {
       RC=$(copy_external_library_license_file ${library} "${LICENSE_FILE}")
 
       if [[ ${RC} -ne 0 ]]; then
-        echo -e "DEBUG: Failed to copy the license file of ${ENABLED_LIBRARY}\n" 1>>"${BASEDIR}"/build.log 2>&1
-        echo -e "failed\n\nSee build.log for details\n"
+        echo -e "ERROR: Failed to copy the license file of ${ENABLED_LIBRARY}\n" 1>>"${BASEDIR}"/build.log 2>&1
         exit 1
       fi
 
@@ -186,8 +174,7 @@ create_linux_bundle() {
     RC=$?
 
     if [[ ${RC} -ne 0 ]]; then
-      echo -e "DEBUG: Failed to copy the license file of custom library ${!library_name}\n" 1>>"${BASEDIR}"/build.log 2>&1
-      echo -e "failed\n\nSee build.log for details\n"
+      echo -e "ERROR: Failed to copy the license file of custom library ${!library_name}\n" 1>>"${BASEDIR}"/build.log 2>&1
       exit 1
     fi
 
@@ -227,11 +214,7 @@ get_common_includes() {
 }
 
 get_common_cflags() {
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    local LTS_BUILD_FLAG="-DFFMPEG_KIT_LTS "
-  fi
-
-  echo "-fstrict-aliasing -fPIC -DLINUX ${LTS_BUILD_FLAG} ${LLVM_CONFIG_CFLAGS}"
+  echo "-fstrict-aliasing -fPIC -DLINUX ${LLVM_CONFIG_CFLAGS}"
 }
 
 get_arch_specific_cflags() {
@@ -305,7 +288,7 @@ get_cflags() {
   fi
   local COMMON_INCLUDES=$(get_common_includes)
 
-  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${COMMON_INCLUDES}"
+  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${COMMON_INCLUDES} ${EXTRA_CFLAGS}"
 }
 
 get_cxxflags() {
@@ -322,14 +305,14 @@ get_cxxflags() {
   fi
 
   local BUILD_DATE="-DFFMPEG_KIT_BUILD_DATE=$(date +%Y%m%d 2>>"${BASEDIR}"/build.log)"
-  local COMMON_FLAGS="-stdlib=libstdc++ -std=c++11 ${OPTIMIZATION_FLAGS} ${BUILD_DATE} $(get_arch_specific_cflags)"
+  local COMMON_FLAGS="-stdlib=libstdc++ -std=c++11 ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS} ${BUILD_DATE} $(get_arch_specific_cflags)"
 
   case $1 in
   ffmpeg)
     if [[ -z ${FFMPEG_KIT_DEBUG} ]]; then
-      echo "${LINK_TIME_OPTIMIZATION_FLAGS} -stdlib=libstdc++ -std=c++11 -O2 -ffunction-sections -fdata-sections"
+      echo "${LINK_TIME_OPTIMIZATION_FLAGS} -stdlib=libstdc++ -std=c++11 -O2 -ffunction-sections -fdata-sections ${EXTRA_CXXFLAGS}"
     else
-      echo "${FFMPEG_KIT_DEBUG} -stdlib=libstdc++ -std=c++11"
+      echo "${FFMPEG_KIT_DEBUG} -stdlib=libstdc++ -std=c++11 ${EXTRA_CXXFLAGS}"
     fi
     ;;
   ffmpeg-kit)
@@ -395,7 +378,7 @@ get_ldflags() {
   fi
   local COMMON_LINKED_LIBS=$(get_common_linked_libraries "$1")
 
-  echo "${ARCH_FLAGS} ${OPTIMIZATION_FLAGS} ${COMMON_LINKED_LIBS} ${LLVM_CONFIG_LDFLAGS} -Wl,--hash-style=both -fuse-ld=lld"
+  echo "${ARCH_FLAGS} ${OPTIMIZATION_FLAGS} ${COMMON_LINKED_LIBS} ${EXTRA_LDFLAGS} ${LLVM_CONFIG_LDFLAGS} -Wl,--hash-style=both -fuse-ld=lld"
 }
 
 create_mason_cross_file() {
@@ -517,38 +500,20 @@ EOF
 }
 
 get_build_directory() {
-  local LTS_POSTFIX=""
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    LTS_POSTFIX="-lts"
-  fi
-
-  echo "linux-$(get_target_cpu)${LTS_POSTFIX}"
+  echo "linux-$(get_target_cpu)"
 }
 
 detect_clang_version() {
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    for clang_version in 6 .. 10; do
-      if [[ $(command_exists "clang-$clang_version") -eq 0 ]]; then
-        echo "$clang_version"
-        return
-      elif [[ $(command_exists "clang-$clang_version.0") -eq 0 ]]; then
-        echo "$clang_version.0"
-        return
-      fi
-    done
-    echo "none"
-  else
-    for clang_version in 11 .. 20; do
-      if [[ $(command_exists "clang-$clang_version") -eq 0 ]]; then
-        echo "$clang_version"
-        return
-      elif [[ $(command_exists "clang-$clang_version.0") -eq 0 ]]; then
-        echo "$clang_version.0"
-        return
-      fi
-    done
-    echo "none"
-  fi
+  for clang_version in 6 .. 20; do
+    if [[ $(command_exists "clang-$clang_version") -eq 0 ]]; then
+      echo "$clang_version"
+      return
+    elif [[ $(command_exists "clang-$clang_version.0") -eq 0 ]]; then
+      echo "$clang_version.0"
+      return
+    fi
+  done
+  echo "none"
 }
 
 set_toolchain_paths() {

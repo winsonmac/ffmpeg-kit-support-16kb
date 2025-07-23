@@ -1,8 +1,16 @@
-ifeq ($(MY_LTS_POSTFIX),-lts)
-    LOCAL_PATH := $(call my-dir)/../../../prebuilt/android-$(TARGET_ARCH)-lts/ffmpeg/lib
-else
-    LOCAL_PATH := $(call my-dir)/../../../prebuilt/android-$(TARGET_ARCH)/ffmpeg/lib
+ifeq ($(TARGET_ARCH_ABI), armeabi-v7a)
+    MY_BUILD_DIR := $(ARMV7_BUILD_PATH)
 endif
+ifeq ($(TARGET_ARCH_ABI), arm64-v8a)
+    MY_BUILD_DIR := $(ARM64_BUILD_PATH)
+endif
+ifeq ($(TARGET_ARCH_ABI), x86)
+    MY_BUILD_DIR := $(X86_BUILD_PATH)
+endif
+ifeq ($(TARGET_ARCH_ABI), x86_64)
+    MY_BUILD_DIR := $(X86_64_BUILD_PATH)
+endif
+LOCAL_PATH := $(call my-dir)/../../../prebuilt/$(MY_BUILD_DIR)/ffmpeg/lib
 
 MY_ARM_MODE := arm
 

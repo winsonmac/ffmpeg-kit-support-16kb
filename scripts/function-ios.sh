@@ -27,7 +27,7 @@ libraries are created under the prebuilt folder.\n"
   echo -e "Usage: ./$COMMAND [OPTION]...\n"
   echo -e "Specify environment variables as VARIABLE=VALUE to override default build options.\n"
 
-  display_help_options "  -x, --xcframework\t\tbuild xcframework bundles instead of framework bundles" "  -l, --lts			build lts packages to support sdk 10+ devices" "      --target=ios sdk version\t\t\toverride minimum deployment target [12.1]" "      --mac-catalyst-target=ios sdk version\toverride minimum deployment target for mac catalyst [14.0]"
+  display_help_options "  -x, --xcframework\t\tbuild xcframework bundles instead of framework bundles" "      --jobs=N\t\t\t\t\tnumber of jobs to run [auto]" "      --target=ios sdk version\t\t\toverride minimum deployment target [12.1]" "      --mac-catalyst-target=ios sdk version\toverride minimum deployment target for mac catalyst [14.0]"
   display_help_licensing
 
   echo -e "Architectures:"
@@ -75,35 +75,11 @@ enable_main_build() {
   fi
 }
 
-enable_lts_build() {
-  export FFMPEG_KIT_LTS_BUILD="1"
-
-  if [[ $(compare_versions "$DETECTED_IOS_SDK_VERSION" "10") -le 0 ]]; then
-    export IOS_MIN_VERSION=$DETECTED_IOS_SDK_VERSION
-  else
-
-    # XCODE 8.0 HAS IOS SDK 10
-    export IOS_MIN_VERSION=10
-  fi
-
-  if [[ $(compare_versions "$DETECTED_IOS_SDK_VERSION" "13.0") -le 0 ]]; then
-    export MAC_CATALYST_MIN_VERSION=$DETECTED_IOS_SDK_VERSION
-  else
-
-    # MAC CATALYST IS INTRODUCED IN 13.0
-    export MAC_CATALYST_MIN_VERSION=13.0
-  fi
-}
-
 get_common_includes() {
   echo "-I${SDK_PATH}/usr/include"
 }
 
 get_common_cflags() {
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    local LTS_BUILD_FLAG="-DFFMPEG_KIT_LTS "
-  fi
-
   local BUILD_DATE="-DFFMPEG_KIT_BUILD_DATE=$(date +%Y%m%d 2>>"${BASEDIR}"/build.log)"
   if [ -z $NO_BITCODE ]; then
     local BITCODE_FLAGS="-fembed-bitcode"
@@ -111,13 +87,13 @@ get_common_cflags() {
 
   case ${ARCH} in
   i386 | x86-64 | arm64-simulator)
-    echo "-fstrict-aliasing -DIOS ${LTS_BUILD_FLAG}${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
+    echo "-fstrict-aliasing -DIOS $(get_min_sdk_version_flag) ${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
     ;;
   *-mac-catalyst)
-    echo "-fstrict-aliasing ${BITCODE_FLAGS} -DMACOSX ${LTS_BUILD_FLAG}${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
+    echo "-fstrict-aliasing ${BITCODE_FLAGS} -DMACOSX $(get_min_sdk_version_flag) ${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
     ;;
   *)
-    echo "-fstrict-aliasing ${BITCODE_FLAGS} -DIOS ${LTS_BUILD_FLAG}${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
+    echo "-fstrict-aliasing ${BITCODE_FLAGS} -DIOS $(get_min_sdk_version_flag) ${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
     ;;
   esac
 }
@@ -255,7 +231,7 @@ get_cflags() {
   local MIN_VERSION_FLAGS=$(get_min_version_cflags "$1")
   local COMMON_INCLUDES=$(get_common_includes)
 
-  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${MIN_VERSION_FLAGS} ${COMMON_INCLUDES}"
+  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${MIN_VERSION_FLAGS} ${COMMON_INCLUDES} ${EXTRA_CFLAGS}"
 }
 
 get_asmflags() {
@@ -274,7 +250,7 @@ get_asmflags() {
 }
 
 get_cxxflags() {
-  local COMMON_CFLAGS="$(get_common_cflags "$1") $(get_common_includes "$1") $(get_arch_specific_cflags) $(get_min_version_cflags "$1")"
+  local COMMON_CFLAGS="$(get_common_cflags "$1") $(get_common_includes "$1") $(get_arch_specific_cflags) $(get_min_version_cflags "$1") $(get_min_sdk_version_flag)"
   if [[ -z ${FFMPEG_KIT_DEBUG} ]]; then
     local OPTIMIZATION_FLAGS="-Oz"
   else
@@ -291,32 +267,32 @@ get_cxxflags() {
   esac
 
   case $1 in
-  x265)
-    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS}"
-    ;;
   gnutls)
-    echo "-std=c++11 -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libaom)
-    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libilbc)
-    echo "-std=c++14 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++14 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libwebp | xvidcore)
-    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} -fno-common -DPIC ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} -fno-common -DPIC ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   opencore-amr)
-    echo "-fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   rubberband)
-    echo "-fno-rtti -Wno-c++11-narrowing ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-fno-rtti -Wno-c++11-narrowing ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   srt | tesseract | zimg)
-    echo "-std=c++11 ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
+    ;;
+  x265)
+    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   *)
-    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   esac
 }
@@ -326,7 +302,13 @@ get_common_linked_libraries() {
 }
 
 get_common_ldflags() {
-  echo "-isysroot ${SDK_PATH} $(get_min_version_cflags)"
+
+  # WORKAROUND FOR XCODE 15.0/15.0.1
+  if [[ $(compare_versions "$DETECTED_IOS_SDK_VERSION" "17.0") -eq 0 ]]; then
+    echo "-isysroot ${SDK_PATH} $(get_min_version_cflags) -Wl,-ld_classic"
+  else
+    echo "-isysroot ${SDK_PATH} $(get_min_version_cflags)"
+  fi
 }
 
 get_size_optimization_ldflags() {
@@ -403,16 +385,16 @@ get_ldflags() {
   ffmpeg-kit)
     case ${ARCH} in
     armv7 | armv7s | arm64 | arm64e | *-mac-catalyst)
-      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${BITCODE_FLAGS} ${OPTIMIZATION_FLAGS}"
+      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${BITCODE_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
       ;;
     *)
-      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS}"
+      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
       ;;
     esac
     ;;
   *)
     # NOTE THAT ffmpeg ALSO NEEDS BITCODE, IT IS ENABLED IN ffmpeg.sh
-    echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
     ;;
   esac
 }

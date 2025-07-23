@@ -7,7 +7,7 @@ source "${BASEDIR}"/scripts/variable.sh
 source "${BASEDIR}"/scripts/function-${FFMPEG_KIT_BUILD_TYPE}.sh
 disabled_libraries=()
 
-# SET DEFAULTS SETTINGS
+# SET DEFAULT SETTINGS
 enable_default_linux_architectures
 
 echo -e "INFO: Build options: $*\n" 1>>"${BASEDIR}"/build.log 2>&1
@@ -55,9 +55,12 @@ while [ ! $# -eq 0 ]; do
   -s | --speed)
     optimize_for_speed
     ;;
-  -l | --lts) ;;
   -f | --force)
     export BUILD_FORCE="1"
+    ;;
+  --jobs=*)
+    JOB_COUNT=$(echo $1 | sed -e 's/^--[A-Za-z]*=//g')
+    export BUILD_JOBS="${JOB_COUNT}"
     ;;
   --reconf-*)
     CONF_LIBRARY=$(echo $1 | sed -e 's/^--[A-Za-z]*-//g')
@@ -107,6 +110,26 @@ while [ ! $# -eq 0 ]; do
     API_LEVEL=$(echo $1 | sed -e 's/^--[A-Za-z]*-[A-Za-z]*=//g')
 
     export API=${API_LEVEL}
+    ;;
+  --extra-cflags=*)
+    EXTRA_CFLAGS=$(echo $1 | sed -e 's/^--extra-cflags=//g')
+    export EXTRA_CFLAGS="${EXTRA_CFLAGS}"
+    ;;
+  --extra-cxxflags=*)
+    EXTRA_CXXFLAGS=$(echo $1 | sed -e 's/^--extra-cxxflags=//g')
+    export EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS}"
+    ;;
+  --extra-ldflags=*)
+    EXTRA_LDFLAGS=$(echo $1 | sed -e 's/^--extra-ldflags=//g')
+    export EXTRA_LDFLAGS="${EXTRA_LDFLAGS}"
+    ;;
+  --version-*)
+    CUSTOM_VERSION_KEY=$(echo $1 | sed -e 's/^--version-//g;s/=.*$//g')
+    CUSTOM_VERSION_VALUE=$(echo $1 | sed -e 's/^--version-.*=//g')
+
+    echo -e "INFO: Custom version detected: ${CUSTOM_VERSION_KEY} ${CUSTOM_VERSION_VALUE}\n" 1>>"${BASEDIR}"/build.log 2>&1
+
+    generate_custom_version_environment_variables "${CUSTOM_VERSION_KEY}" "${CUSTOM_VERSION_VALUE}"
     ;;
   *)
     print_unknown_option "$1"
@@ -169,6 +192,7 @@ for gpl_library in {$LIBRARY_X264,$LIBRARY_LINUX_XVIDCORE,$LIBRARY_LINUX_X265,$L
   fi
 done
 
+trap fail_operation EXIT
 echo -n -e "\nDownloading sources: "
 echo -e "INFO: Downloading the source code of ffmpeg and external libraries.\n" 1>>"${BASEDIR}"/build.log 2>&1
 

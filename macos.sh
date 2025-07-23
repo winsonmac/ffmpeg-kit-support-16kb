@@ -18,7 +18,7 @@ source "${BASEDIR}"/scripts/variable.sh
 source "${BASEDIR}"/scripts/function-${FFMPEG_KIT_BUILD_TYPE}.sh
 disabled_libraries=()
 
-# SET DEFAULTS SETTINGS
+# SET DEFAULT SETTINGS
 enable_default_macos_architectures
 
 # SELECT XCODE VERSION USED FOR BUILDING
@@ -28,8 +28,9 @@ if [[ -f ${XCODE_FOR_FFMPEG_KIT} ]]; then
 fi
 
 # DETECT MACOS SDK VERSION
-export DETECTED_MACOS_SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version 2>>${BASEDIR}/build.log)"
-echo -e "\nINFO: Using SDK ${DETECTED_MACOS_SDK_VERSION} by Xcode provided at $(xcode-select -p)\n" 1>>"${BASEDIR}"/build.log 2>&1
+export DETECTED_MACOS_SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version 2>>"${BASEDIR}"/build.log)"
+XCODE_PATH=$(xcode-select -p 2>>"${BASEDIR}"/build.log)
+echo -e "\nINFO: Using SDK ${DETECTED_MACOS_SDK_VERSION} by Xcode provided at ${XCODE_PATH}\n" 1>>"${BASEDIR}"/build.log 2>&1
 echo -e "\nINFO: Build options: $*\n" 1>>"${BASEDIR}"/build.log 2>&1
 
 # SET DEFAULT BUILD OPTIONS
@@ -47,14 +48,6 @@ fi
 
 # MAIN BUILDS ENABLED BY DEFAULT
 enable_main_build
-
-# PROCESS LTS BUILD OPTION FIRST AND SET BUILD TYPE: MAIN OR LTS
-for argument in "$@"; do
-  if [[ "$argument" == "-l" ]] || [[ "$argument" == "--lts" ]]; then
-    enable_lts_build
-    BUILD_TYPE_ID+="LTS "
-  fi
-done
 
 # PROCESS BUILD OPTIONS
 while [ ! $# -eq 0 ]; do
@@ -88,12 +81,15 @@ while [ ! $# -eq 0 ]; do
   -s | --speed)
     optimize_for_speed
     ;;
-  -l | --lts) ;;
   -x | --xcframework)
     FFMPEG_KIT_XCF_BUILD="1"
     ;;
   -f | --force)
     export BUILD_FORCE="1"
+    ;;
+  --jobs=*)
+    JOB_COUNT=$(echo $1 | sed -e 's/^--[A-Za-z]*=//g')
+    export BUILD_JOBS="${JOB_COUNT}"
     ;;
   --reconf-*)
     CONF_LIBRARY=$(echo $1 | sed -e 's/^--[A-Za-z]*-//g')
@@ -143,6 +139,26 @@ while [ ! $# -eq 0 ]; do
     TARGET=$(echo $1 | sed -e 's/^--[A-Za-z]*=//g')
 
     export MACOS_MIN_VERSION=${TARGET}
+    ;;
+  --extra-cflags=*)
+    EXTRA_CFLAGS=$(echo $1 | sed -e 's/^--extra-cflags=//g')
+    export EXTRA_CFLAGS="${EXTRA_CFLAGS}"
+    ;;
+  --extra-cxxflags=*)
+    EXTRA_CXXFLAGS=$(echo $1 | sed -e 's/^--extra-cxxflags=//g')
+    export EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS}"
+    ;;
+  --extra-ldflags=*)
+    EXTRA_LDFLAGS=$(echo $1 | sed -e 's/^--extra-ldflags=//g')
+    export EXTRA_LDFLAGS="${EXTRA_LDFLAGS}"
+    ;;
+  --version-*)
+    CUSTOM_VERSION_KEY=$(echo $1 | sed -e 's/^--version-//g;s/=.*$//g')
+    CUSTOM_VERSION_VALUE=$(echo $1 | sed -e 's/^--version-.*=//g')
+
+    echo -e "INFO: Custom version detected: ${CUSTOM_VERSION_KEY} ${CUSTOM_VERSION_VALUE}\n" 1>>"${BASEDIR}"/build.log 2>&1
+
+    generate_custom_version_environment_variables "${CUSTOM_VERSION_KEY}" "${CUSTOM_VERSION_VALUE}"
     ;;
   *)
     print_unknown_option "$1"
@@ -203,6 +219,7 @@ for gpl_library in {$LIBRARY_X264,$LIBRARY_XVIDCORE,$LIBRARY_X265,$LIBRARY_LIBVI
   fi
 done
 
+trap fail_operation EXIT
 echo -n -e "\nDownloading sources: "
 echo -e "INFO: Downloading the source code of ffmpeg and external libraries.\n" 1>>"${BASEDIR}"/build.log 2>&1
 

@@ -15,13 +15,8 @@ if [[ -z ${BASEDIR} ]]; then
   exit 1
 fi
 
-if [[ -z ${TOOLCHAIN} ]]; then
-  echo -e "\n(*) TOOLCHAIN not defined\n"
-  exit 1
-fi
-
-if [[ -z ${TOOLCHAIN_ARCH} ]]; then
-  echo -e "\n(*) TOOLCHAIN_ARCH not defined\n"
+if [[ -z ${ANDROID_TOOLCHAIN} ]]; then
+  echo -e "\n(*) ANDROID_TOOLCHAIN is not set\n"
   exit 1
 fi
 
@@ -49,10 +44,8 @@ for library in {1..50}; do
   fi
 done
 
-# BUILD LTS SUPPORT LIBRARY FOR API < 18
-if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]] && [[ ${API} -lt 18 ]]; then
-  build_android_lts_support
-fi
+# BUILD SUPPORT LIBRARY
+build_android_support
 
 # BUILD ENABLED LIBRARIES AND THEIR DEPENDENCIES
 let completed=0
@@ -185,11 +178,7 @@ while [ ${#enabled_library_list[@]} -gt $completed ]; do
           declare "$BUILD_COMPLETED_FLAG=1"
           check_if_dependency_rebuilt "${library}"
           echo "ok"
-        elif [ $RC -eq 200 ]; then
-          echo -e "not supported\n\nSee build.log for details\n"
-          exit 1
         else
-          echo -e "failed\n\nSee build.log for details\n"
           exit 1
         fi
       else
@@ -226,11 +215,7 @@ for custom_library_index in "${CUSTOM_LIBRARIES[@]}"; do
     # SET SOME FLAGS AFTER THE BUILD
     if [ $RC -eq 0 ]; then
       echo "ok"
-    elif [ $RC -eq 200 ]; then
-      echo -e "not supported\n\nSee build.log for details\n"
-      exit 1
     else
-      echo -e "failed\n\nSee build.log for details\n"
       exit 1
     fi
   else

@@ -8,6 +8,52 @@ fi
 
 LIB_NAME="ffmpeg"
 
+build_ffmpeg() {
+  if [[ -z ${NO_OUTPUT_REDIRECTION} ]]; then
+    make -j$(get_cpu_count) 1>>"${BASEDIR}"/build.log 2>&1
+
+    if [[ $? -ne 0 ]]; then
+      exit 1
+    fi
+  else
+    echo -e "started\n"
+    make -j$(get_cpu_count)
+
+    echo -n -e "\n${LIB_NAME}: "
+    if [[ $? -ne 0 ]]; then
+      exit 1
+    fi
+  fi
+}
+
+install_ffmpeg() {
+
+  if [[ -n $1 ]]; then
+
+    # DELETE THE PREVIOUS BUILD
+    if [ -d "${FFMPEG_LIBRARY_PATH}" ]; then
+      rm -rf "${FFMPEG_LIBRARY_PATH}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+    fi
+  else
+
+    # LEAVE EVERYTHING EXCEPT frameworks
+    rm -rf "${FFMPEG_LIBRARY_PATH}/include" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+    rm -rf "${FFMPEG_LIBRARY_PATH}/lib" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+    rm -rf "${FFMPEG_LIBRARY_PATH}/share" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+  fi
+  make install 1>>"${BASEDIR}"/build.log 2>&1
+
+  if [[ $? -ne 0 ]]; then
+    exit 1
+  fi
+}
+
+create_temporary_framework() {
+  local FRAMEWORK_NAME="$1"
+  mkdir -p "${FFMPEG_LIBRARY_PATH}/framework/${FRAMEWORK_NAME}.framework" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+  cp "${FFMPEG_LIBRARY_PATH}/lib/${FRAMEWORK_NAME}.dylib" "${FFMPEG_LIBRARY_PATH}/framework/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
+}
+
 echo -e "----------------------------------------------------------------" 1>>"${BASEDIR}"/build.log 2>&1
 echo -e "\nINFO: Building ${LIB_NAME} for ${HOST} with the following environment variables\n" 1>>"${BASEDIR}"/build.log 2>&1
 env 1>>"${BASEDIR}"/build.log 2>&1
@@ -85,13 +131,13 @@ i386)
   BITCODE_FLAGS=""
   ;;
 x86-64)
-  TARGET_CPU="x86_64"
+  TARGET_CPU="x86-64"
   TARGET_ARCH="x86_64"
   ASM_OPTIONS=" --disable-neon --disable-asm"
   BITCODE_FLAGS=""
   ;;
 x86-64-mac-catalyst)
-  TARGET_CPU="x86_64"
+  TARGET_CPU="x86-64"
   TARGET_ARCH="x86_64"
   ASM_OPTIONS=" --disable-neon --disable-asm"
   BITCODE_FLAGS="-fembed-bitcode -Wc,-fembed-bitcode"
@@ -355,7 +401,35 @@ for library in {0..61}; do
         CONFIGURE_POSTFIX+=" --enable-opengl"
         ;;
       *-videotoolbox)
-        CONFIGURE_POSTFIX+=" --enable-videotoolbox"
+        if [[ ${FFMPEG_KIT_BUILD_TYPE} == "ios" ]]; then
+          CONFIGURE_POSTFIX+=" --enable-videotoolbox"
+
+          # DISABLE FILTERS THAT REQUIRE IOS 16.0
+          if [[ $(compare_versions "$IOS_MIN_VERSION" "16.0") -lt 1 ]]; then
+            CONFIGURE_POSTFIX+=" --disable-filter=scale_vt"
+            echo -e "WARN: Disabled scale_vt filter as it requires min sdk version >= 16.0 for ios. Currently it is set to $IOS_MIN_VERSION.\n" 1>>"${BASEDIR}"/build.log 2>&1
+          elif [[ $(compare_versions "$MAC_CATALYST_MIN_VERSION" "16.0") -lt 1 ]]; then
+            CONFIGURE_POSTFIX+=" --disable-filter=scale_vt"
+            echo -e "WARN: Disabled scale_vt filter as it requires min sdk version >= 16.0 for ios. Currently it is set to $MAC_CATALYST_MIN_VERSION.\n" 1>>"${BASEDIR}"/build.log 2>&1
+          fi
+        elif [[ ${FFMPEG_KIT_BUILD_TYPE} == "macos" ]]; then
+
+          if [[ $(compare_versions "$MACOS_MIN_VERSION" "10.13") -ge 1 ]]; then
+            CONFIGURE_POSTFIX+=" --enable-videotoolbox"
+          else
+            CONFIGURE_POSTFIX+=" --disable-videotoolbox"
+            echo -e "WARN: Disabled videotoolbox as it requires min sdk version >= 10.13 for macos. Currently it is set to $MACOS_MIN_VERSION.\n" 1>>"${BASEDIR}"/build.log 2>&1
+          fi
+
+        elif [[ ${FFMPEG_KIT_BUILD_TYPE} == "tvos" ]]; then
+          CONFIGURE_POSTFIX+=" --enable-videotoolbox"
+
+          # DISABLE FILTERS THAT REQUIRE TVOS 16
+          if [[ $(compare_versions "$TVOS_MIN_VERSION" "16.0") -lt 1 ]]; then
+            CONFIGURE_POSTFIX+=" --disable-filter=scale_vt"
+            echo -e "WARN: Disabled scale_vt filter as it requires min sdk version >= 16.0 for tvos. Currently it is set to $TVOS_MIN_VERSION.\n" 1>>"${BASEDIR}"/build.log 2>&1
+          fi
+        fi
         ;;
       *-zlib)
         CONFIGURE_POSTFIX+=" --enable-zlib"
@@ -473,6 +547,7 @@ fi
 
 ########################### CUSTOMIZATIONS #######################
 git checkout libavformat/file.c 1>>"${BASEDIR}"/build.log 2>&1
+git checkout libavformat/hls.c 1>>"${BASEDIR}"/build.log 2>&1
 git checkout libavformat/protocols.c 1>>"${BASEDIR}"/build.log 2>&1
 git checkout libavutil 1>>"${BASEDIR}"/build.log 2>&1
 
@@ -551,53 +626,8 @@ ${SED_INLINE} 's/static int av_log_level/__thread int av_log_level/g' "${BASEDIR
   ${CONFIGURE_POSTFIX} 1>>"${BASEDIR}"/build.log 2>&1
 
 if [[ $? -ne 0 ]]; then
-  echo -e "failed\n\nSee build.log for details\n"
   exit 1
 fi
-
-build_ffmpeg() {
-  if [[ -z ${NO_OUTPUT_REDIRECTION} ]]; then
-    make -j$(get_cpu_count) 1>>"${BASEDIR}"/build.log 2>&1
-
-    if [[ $? -ne 0 ]]; then
-      echo -e "failed\n\nSee build.log for details\n"
-      exit 1
-    fi
-  else
-    echo -e "started\n"
-    make -j$(get_cpu_count)
-
-    if [[ $? -ne 0 ]]; then
-      echo -n -e "\n${LIB_NAME}: failed\n\nSee build.log for details\n"
-      exit 1
-    else
-      echo -n -e "\n${LIB_NAME}: "
-    fi
-  fi
-}
-
-install_ffmpeg() {
-
-  if [[ -n $1 ]]; then
-
-    # DELETE THE PREVIOUS BUILD
-    if [ -d "${FFMPEG_LIBRARY_PATH}" ]; then
-      rm -rf "${FFMPEG_LIBRARY_PATH}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-    fi
-  else
-
-    # LEAVE EVERYTHING EXCEPT frameworks
-    rm -rf "${FFMPEG_LIBRARY_PATH}/include" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-    rm -rf "${FFMPEG_LIBRARY_PATH}/lib" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-    rm -rf "${FFMPEG_LIBRARY_PATH}/share" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-  fi
-  make install 1>>"${BASEDIR}"/build.log 2>&1
-
-  if [[ $? -ne 0 ]]; then
-    echo -e "failed\n\nSee build.log for details\n"
-    exit 1
-  fi
-}
 
 ${SED_INLINE} 's|$(SLIBNAME_WITH_MAJOR),|$(SLIBPREF)$(FULLNAME).framework/$(SLIBPREF)$(FULLNAME),|g' ${BASEDIR}/src/ffmpeg/ffbuild/config.mak 1>>"${BASEDIR}"/build.log 2>&1 || return 1
 
@@ -609,12 +639,6 @@ install_ffmpeg "true"
 find . -name "*.dylib" -delete 1>>"${BASEDIR}"/build.log 2>&1
 
 echo -e "\nShared libraries built successfully. Building frameworks.\n" 1>>"${BASEDIR}"/build.log 2>&1
-
-create_temporary_framework() {
-  local FRAMEWORK_NAME="$1"
-  mkdir -p "${FFMPEG_LIBRARY_PATH}/framework/${FRAMEWORK_NAME}.framework" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-  cp "${FFMPEG_LIBRARY_PATH}/lib/${FRAMEWORK_NAME}.dylib" "${FFMPEG_LIBRARY_PATH}/framework/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-}
 
 create_temporary_framework "libavcodec"
 create_temporary_framework "libavdevice"
@@ -633,35 +657,12 @@ build_ffmpeg
 install_ffmpeg
 
 # MANUALLY ADD REQUIRED HEADERS
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/arm 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/aarch64 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/x86 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/arm 1>>"${BASEDIR}"/build.log 2>&1
+mkdir -p "${FFMPEG_LIBRARY_PATH}"/include 1>>"${BASEDIR}"/build.log 2>&1
 overwrite_file "${BASEDIR}"/src/ffmpeg/config.h "${FFMPEG_LIBRARY_PATH}"/include/config.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/x86/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/x86/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/arm/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/arm/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/network.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/network.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/os_support.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/os_support.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/url.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/url.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/attributes_internal.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/attributes_internal.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/bprint.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/bprint.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/getenv_utf8.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/getenv_utf8.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/internal.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/internal.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/libm.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/libm.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/reverse.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/reverse.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/thread.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/thread.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/asm.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/asm.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/arm/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/arm/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/aarch64/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/aarch64/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/emms.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/emms.h 1>>"${BASEDIR}"/build.log 2>&1
+rsync -am --include='*.h' --include='*/' --exclude='*' "${BASEDIR}"/src/ffmpeg/ "${FFMPEG_LIBRARY_PATH}"/include/ 1>>"${BASEDIR}"/build.log 2>&1
 
 if [ $? -eq 0 ]; then
   echo "ok"
 else
-  echo -e "failed\n\nSee build.log for details\n"
   exit 1
 fi

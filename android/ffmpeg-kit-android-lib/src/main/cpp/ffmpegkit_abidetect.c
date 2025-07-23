@@ -17,20 +17,25 @@
  * along with FFmpegKit.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "ffmpegkit_abidetect.h"
 #include "cpu-features.h"
 #include "fftools_ffmpeg.h"
-#include "ffmpegkit_abidetect.h"
 
 /** Full name of the Java class that owns native functions in this file. */
 const char *abiDetectClassName = "com/arthenica/ffmpegkit/AbiDetect";
 
 /** Prototypes of native functions defined by this file. */
 JNINativeMethod abiDetectMethods[] = {
-  {"getNativeAbi", "()Ljava/lang/String;", (void*) Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi},
-  {"getNativeCpuAbi", "()Ljava/lang/String;", (void*) Java_com_arthenica_ffmpegkit_AbiDetect_getNativeCpuAbi},
-  {"isNativeLTSBuild", "()Z", (void*) Java_com_arthenica_ffmpegkit_AbiDetect_isNativeLTSBuild},
-  {"getNativeBuildConf", "()Ljava/lang/String;", (void*) Java_com_arthenica_ffmpegkit_AbiDetect_getNativeBuildConf}
-};
+    {"getNativeAbi", "()Ljava/lang/String;",
+     (void *)Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi},
+    {"getNativeCpuAbi", "()Ljava/lang/String;",
+     (void *)Java_com_arthenica_ffmpegkit_AbiDetect_getNativeCpuAbi},
+    {"isNativeLTSBuild", "()Z",
+     (void *)Java_com_arthenica_ffmpegkit_AbiDetect_isNativeLTSBuild},
+    {"getNativeBuildConf", "()Ljava/lang/String;",
+     (void *)Java_com_arthenica_ffmpegkit_AbiDetect_getNativeBuildConf},
+    {"getNativeMinSdk", "()Ljava/lang/String;",
+     (void *)Java_com_arthenica_ffmpegkit_AbiDetect_getNativeMinSdk}};
 
 /**
  * Called when 'abidetect' native library is loaded.
@@ -41,7 +46,7 @@ JNINativeMethod abiDetectMethods[] = {
  */
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void**) &env, JNI_VERSION_1_6) != JNI_OK) {
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
         LOGE("OnLoad failed to GetEnv for class %s.\n", abiDetectClassName);
         return JNI_FALSE;
     }
@@ -52,8 +57,9 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_FALSE;
     }
 
-    if ((*env)->RegisterNatives(env, abiDetectClass, abiDetectMethods, 4) < 0) {
-        LOGE("OnLoad failed to RegisterNatives for class %s.\n", abiDetectClassName);
+    if ((*env)->RegisterNatives(env, abiDetectClass, abiDetectMethods, 5) < 0) {
+        LOGE("OnLoad failed to RegisterNatives for class %s.\n",
+             abiDetectClassName);
         return JNI_FALSE;
     }
 
@@ -67,7 +73,8 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
  * @param object reference to the class on which this method is invoked
  * @return loaded ABI name as UTF string
  */
-JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi(JNIEnv *env, jclass object) {
+JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi(
+    JNIEnv *env, jclass object) {
 
 #ifdef FFMPEG_KIT_ARM_V7A
     return (*env)->NewStringUTF(env, "arm-v7a");
@@ -80,7 +87,6 @@ JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi(JN
 #else
     return (*env)->NewStringUTF(env, "unknown");
 #endif
-
 }
 
 /**
@@ -90,7 +96,9 @@ JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeAbi(JN
  * @param object reference to the class on which this method is invoked
  * @return ABI name of the running cpu as UTF string
  */
-JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeCpuAbi(JNIEnv *env, jclass object) {
+JNIEXPORT jstring JNICALL
+Java_com_arthenica_ffmpegkit_AbiDetect_getNativeCpuAbi(JNIEnv *env,
+                                                       jclass object) {
     AndroidCpuFamily family = android_getCpuFamily();
 
     if (family == ANDROID_CPU_FAMILY_ARM) {
@@ -124,12 +132,14 @@ JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeCpuAbi
  * @param object reference to the class on which this method is invoked
  * @return yes or no
  */
-JNIEXPORT jboolean JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_isNativeLTSBuild(JNIEnv *env, jclass object) {
-    #if defined(FFMPEG_KIT_LTS)
-        return JNI_TRUE;
-    #else
-        return JNI_FALSE;
-    #endif
+JNIEXPORT jboolean JNICALL
+Java_com_arthenica_ffmpegkit_AbiDetect_isNativeLTSBuild(JNIEnv *env,
+                                                        jclass object) {
+#if defined(FFMPEG_KIT_LTS)
+    return JNI_TRUE;
+#else
+    return JNI_FALSE;
+#endif
 }
 
 /**
@@ -139,6 +149,30 @@ JNIEXPORT jboolean JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_isNativeLTSBui
  * @param object reference to the class on which this method is invoked
  * @return build configuration string
  */
-JNIEXPORT jstring JNICALL Java_com_arthenica_ffmpegkit_AbiDetect_getNativeBuildConf(JNIEnv *env, jclass object) {
+JNIEXPORT jstring JNICALL
+Java_com_arthenica_ffmpegkit_AbiDetect_getNativeBuildConf(JNIEnv *env,
+                                                          jclass object) {
     return (*env)->NewStringUTF(env, FFMPEG_CONFIGURATION);
+}
+
+/**
+ * Returns the minimum Android API level required to run this native library.
+ *
+ * @param env pointer to native method interface
+ * @param object reference to the class on which this method is invoked
+ * @return the minimum Android API level required to run this native library
+ */
+JNIEXPORT jstring JNICALL
+Java_com_arthenica_ffmpegkit_AbiDetect_getNativeMinSdk(
+    JNIEnv *env, jclass object) {
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define FFMPEG_KIT_MIN_SDK_STR TOSTRING(FFMPEG_KIT_MIN_SDK)
+
+#ifdef FFMPEG_KIT_MIN_SDK
+    return (*env)->NewStringUTF(env, FFMPEG_KIT_MIN_SDK_STR);
+#else
+    return (*env)->NewStringUTF(env, "");
+#endif
 }

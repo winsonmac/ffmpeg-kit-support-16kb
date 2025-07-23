@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 Taner Sener
+ * Copyright (c) 2024 ARTHENICA LTD
  *
  * This file is part of FFmpegKit.
  *
@@ -185,6 +186,11 @@ public class FFmpegKitConfigTest {
             FFmpegSession.create(TEST_ARGUMENTS);
             Assert.assertTrue(FFmpegKitConfig.getSessions().size() <= newSize);
         }
+    }
+
+    @Test
+    public void unregisterSafProtocolUrl() {
+        FFmpegKitConfig.unregisterSafProtocolUrl("saf:1.mp4");
     }
 
     private String listToPackageName(final List<String> externalLibraryList) {

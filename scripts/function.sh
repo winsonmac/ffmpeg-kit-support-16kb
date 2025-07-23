@@ -924,6 +924,7 @@ display_help_advanced_options() {
   echo -e "  --reconf-LIBRARY\t\trun autoreconf before building LIBRARY [no]"
   echo -e "  --redownload-LIBRARY\t\tdownload LIBRARY even if it is detected as already downloaded [no]"
   echo -e "  --rebuild-LIBRARY\t\tbuild LIBRARY even if it is detected as already built [no]"
+  echo -e "  --version-LIBRARY=n\t\toverride default LIBRARY version []"
   if [ -n "$1" ]; then
     echo -e "$1"
   fi
@@ -1928,8 +1929,8 @@ clone_git_repository_with_commit_id() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to create local directory $2\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to create local directory $2\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$2" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -1941,8 +1942,8 @@ clone_git_repository_with_commit_id() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to clone $1\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to clone $1\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$2" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -1952,8 +1953,8 @@ clone_git_repository_with_commit_id() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to cd into $2\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to cd into $2\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$2" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -1963,8 +1964,8 @@ clone_git_repository_with_commit_id() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to fetch commit id $3 from $1\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to fetch commit id $3 from $1\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$2" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -1974,8 +1975,8 @@ clone_git_repository_with_commit_id() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to checkout commit id $3 from $1\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to checkout commit id $3 from $1\n" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
   fi
@@ -1995,8 +1996,8 @@ clone_git_repository_with_tag() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to create local directory $3\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to create local directory $3\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$3" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -2008,8 +2009,8 @@ clone_git_repository_with_tag() {
 
   RC=$?
 
-  if [ ${RC} -ne 0 ]; then
-    echo -e "\nINFO: Failed to clone $1 -> $2\n" 1>>"${BASEDIR}"/build.log 2>&1
+  if [[ ${RC} -ne 0 ]]; then
+    echo -e "\nERROR: Failed to clone $1 -> $2\n" 1>>"${BASEDIR}"/build.log 2>&1
     rm -rf "$3" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${RC}
     return
@@ -2035,34 +2036,26 @@ is_gpl_licensed() {
 downloaded_library_sources() {
 
   # DOWNLOAD FFMPEG SOURCE CODE FIRST
-  DOWNLOAD_RESULT=$(download_library_source "ffmpeg")
-  if [[ ${DOWNLOAD_RESULT} -ne 0 ]]; then
-    echo -e "failed\n"
+  if [[ $(download_library_source "ffmpeg") -ne 0 ]]; then
     exit 1
   fi
 
+  # DOWNLOAD LIBRARY SOURCES
   for library in {1..50}; do
     if [[ ${!library} -eq 1 ]]; then
       library_name=$(get_library_name $((library - 1)))
-
       echo -e "\nDEBUG: Downloading library ${library_name}\n" 1>>"${BASEDIR}"/build.log 2>&1
-
-      DOWNLOAD_RESULT=$(download_library_source "${library_name}")
-      if [[ ${DOWNLOAD_RESULT} -ne 0 ]]; then
-        echo -e "failed\n"
+      if [[ $(download_library_source "${library_name}") -ne 0 ]]; then
         exit 1
       fi
     fi
   done
 
+  # DOWNLOAD CUSTOM LIBRARY SOURCES
   for custom_library_index in "${CUSTOM_LIBRARIES[@]}"; do
     library_name="CUSTOM_LIBRARY_${custom_library_index}_NAME"
-
     echo -e "\nDEBUG: Downloading custom library ${!library_name}\n" 1>>"${BASEDIR}"/build.log 2>&1
-
-    DOWNLOAD_RESULT=$(download_custom_library_source "${custom_library_index}")
-    if [[ ${DOWNLOAD_RESULT} -ne 0 ]]; then
-      echo -e "failed\n"
+    if [[ $(download_custom_library_source "${custom_library_index}") -ne 0 ]]; then
       exit 1
     fi
   done
@@ -2089,7 +2082,7 @@ download() {
   else
     rm -f "${FFMPEG_KIT_TMPDIR}"/"$2" 1>>"${BASEDIR}"/build.log 2>&1
 
-    echo -e -n "\nINFO: Failed to download $1 to ${FFMPEG_KIT_TMPDIR}/$2, rc=${RC}. " 1>>"${BASEDIR}"/build.log 2>&1
+    echo -e -n "\nERROR: Failed to download $1 to ${FFMPEG_KIT_TMPDIR}/$2, rc=${RC}. " 1>>"${BASEDIR}"/build.log 2>&1
 
     if [ "$3" == "exit" ]; then
       echo -e "DEBUG: Build will now exit.\n" 1>>"${BASEDIR}"/build.log 2>&1
@@ -2135,7 +2128,7 @@ download_library_source() {
   fi
 
   if [ ${DOWNLOAD_RC} -ne 0 ]; then
-    echo -e "INFO: Downloading library $1 failed. Can not get library from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
+    echo -e "ERROR: Downloading library $1 failed. Can not get library from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${DOWNLOAD_RC}
   else
     echo -e "\nINFO: $1 library downloaded" 1>>"${BASEDIR}"/build.log 2>&1
@@ -2186,7 +2179,7 @@ download_custom_library_source() {
   fi
 
   if [ ${DOWNLOAD_RC} -ne 0 ]; then
-    echo -e "INFO: Downloading custom library ${LIB_NAME} failed. Can not get library from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
+    echo -e "ERROR: Downloading custom library ${LIB_NAME} failed. Can not get library from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
     echo ${DOWNLOAD_RC}
   else
     echo -e "\nINFO: ${LIB_NAME} custom library downloaded" 1>>"${BASEDIR}"/build.log 2>&1
@@ -2222,8 +2215,7 @@ download_gnu_config() {
   DOWNLOAD_RC=$(clone_git_repository_with_tag "${SOURCE_REPO_URL}" "${SOURCE_ID}" "${LIB_LOCAL_PATH}")
 
   if [[ ${DOWNLOAD_RC} -ne 0 ]]; then
-    echo -e "INFO: Downloading gnu config failed. Can not get source from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
-    echo -e "failed\n"
+    echo -e "ERROR: Downloading gnu config failed. Can not get source from ${SOURCE_REPO_URL}\n" 1>>"${BASEDIR}"/build.log 2>&1
     exit 1
   else
     echo -e "\nINFO: gnu config downloaded successfully\n" 1>>"${BASEDIR}"/build.log 2>&1
@@ -2235,7 +2227,9 @@ is_gnu_config_files_up_to_date() {
 }
 
 get_cpu_count() {
-  if [ "$(uname)" == "Darwin" ]; then
+  if [ -n "${BUILD_JOBS}" ]; then
+    echo "${BUILD_JOBS}"
+  elif [ "$(uname)" == "Darwin" ]; then
     echo $(sysctl -n hw.logicalcpu)
   else
     echo $(nproc)
@@ -2348,10 +2342,18 @@ overwrite_file() {
 
 #
 # 1. destination file
+# 2. initial content
 #
 create_file() {
-  rm -f "$1"
-  echo "" > "$1" 1>>"${BASEDIR}"/build.log 2>&1
+  echo "$2" > "$1" 2>>"${BASEDIR}"/build.log 2>&1
+}
+
+#
+# 1. destination file
+# 2. content to append
+#
+append_file() {
+  echo "$2" >> "$1" 2>>"${BASEDIR}"/build.log 2>&1
 }
 
 compare_versions() {
@@ -2412,4 +2414,24 @@ initialize_folder() {
   fi
 
   return 0
+}
+
+fail_operation() {
+  if [[ "$?" -ne 0 ]]; then
+    echo -e "failed\n"
+    echo -e "See build.log for the details\n"
+  fi
+}
+
+#
+# 1. key
+# 2. value
+#
+generate_custom_version_environment_variables() {
+  VERSION_KEY=$(echo "VERSION_$1" | sed "s/\-/\_/g" | tr '[A-Z]' '[a-z]')
+  VERSION_VALUE="$2"
+
+  export "${VERSION_KEY}"="${VERSION_VALUE}"
+
+  echo -e "INFO: Custom version env variable generated: ${VERSION_KEY}=${VERSION_VALUE}\n" 1>>"${BASEDIR}"/build.log 2>&1
 }

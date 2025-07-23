@@ -17,7 +17,7 @@ echo -e "INFO: $(uname -a)\n" 1>>"${BASEDIR}"/build.log 2>&1
 echo -e "----------------------------------------------------------------\n" 1>>"${BASEDIR}"/build.log 2>&1
 
 FFMPEG_LIBRARY_PATH="${LIB_INSTALL_BASE}/${LIB_NAME}"
-ANDROID_SYSROOT="${ANDROID_NDK_ROOT}"/toolchains/llvm/prebuilt/"${TOOLCHAIN}"/sysroot
+ANDROID_SYSROOT="${ANDROID_TOOLCHAIN}"/sysroot
 
 # SET PATHS
 set_toolchain_paths "${LIB_NAME}"
@@ -59,7 +59,7 @@ x86)
   ASM_OPTIONS=" --disable-neon --disable-asm --disable-inline-asm"
   ;;
 x86-64)
-  TARGET_CPU="x86_64"
+  TARGET_CPU="x86-64"
   TARGET_ARCH="x86_64"
   ASM_OPTIONS=" --disable-neon --enable-asm --enable-inline-asm"
   ;;
@@ -85,7 +85,7 @@ for library in {0..61}; do
       pkg-config --libs --static cpu-features 2>>"${BASEDIR}"/build.log 1>/dev/null
       if [[ $? -eq 1 ]]; then
         echo -e "ERROR: cpu-features was not found in the pkg-config search path\n" 1>>"${BASEDIR}"/build.log 2>&1
-        echo -e "\nffmpeg: failed\n\nSee build.log for details\n"
+        echo -e "\nffmpeg: "
         exit 1
       fi
       ;;
@@ -338,12 +338,7 @@ if [ "$GPL_ENABLED" == "yes" ]; then
   CONFIGURE_POSTFIX+=" --enable-gpl"
 fi
 
-export LDFLAGS+=" -L${ANDROID_NDK_ROOT}/platforms/android-${API}/arch-${TOOLCHAIN_ARCH}/usr/lib"
-
-# LINKING WITH ANDROID LTS SUPPORT LIBRARY IS NECESSARY FOR API < 18
-if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]] && [[ ${API} -lt 18 ]]; then
-  export LDFLAGS+=" -Wl,--whole-archive ${BASEDIR}/android/ffmpeg-kit-android-lib/src/main/cpp/libandroidltssupport.a -Wl,--no-whole-archive"
-fi
+export LDFLAGS+=" -L${ANDROID_NDK_ROOT}/platforms/android-${API}/arch-$(get_toolchain_arch)/usr/lib"
 
 # ALWAYS BUILD SHARED LIBRARIES
 BUILD_LIBRARY_OPTIONS="--disable-static --enable-shared"
@@ -390,9 +385,9 @@ ulimit -n 2048 1>>"${BASEDIR}"/build.log 2>&1
 
 ########################### CUSTOMIZATIONS #######################
 cd "${BASEDIR}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
-git checkout android/ffmpeg-kit-android-lib/src/main/cpp/ffmpegkit.c 1>>"${BASEDIR}"/build.log 2>&1
 cd "${BASEDIR}"/src/"${LIB_NAME}" 1>>"${BASEDIR}"/build.log 2>&1 || return 1
 git checkout libavformat/file.c 1>>"${BASEDIR}"/build.log 2>&1
+git checkout libavformat/hls.c 1>>"${BASEDIR}"/build.log 2>&1
 git checkout libavformat/protocols.c 1>>"${BASEDIR}"/build.log 2>&1
 git checkout libavutil 1>>"${BASEDIR}"/build.log 2>&1
 
@@ -401,7 +396,6 @@ ${SED_INLINE} 's/static int av_log_level/__thread int av_log_level/g' "${BASEDIR
 
 # 2. Enable ffmpeg-kit protocols
 if [[ ${NO_FFMPEG_KIT_PROTOCOLS} == "1" ]]; then
-  ${SED_INLINE} "s| av_set_saf|//av_set_saf|g" "${BASEDIR}"/android/ffmpeg-kit-android-lib/src/main/cpp/ffmpegkit.c 1>>"${BASEDIR}"/build.log 2>&1
   echo -e "\nINFO: Disabled custom ffmpeg-kit protocols\n" 1>>"${BASEDIR}"/build.log 2>&1
 else
   cat ../../tools/protocols/libavformat_file.c >> libavformat/file.c
@@ -409,6 +403,7 @@ else
   cat ../../tools/protocols/libavutil_file.c >> libavutil/file.c
   awk '{gsub(/ff_file_protocol;/,"ff_file_protocol;\nextern const URLProtocol ff_saf_protocol;")}1' libavformat/protocols.c > libavformat/protocols.c.tmp
   cat libavformat/protocols.c.tmp > libavformat/protocols.c
+  ${SED_INLINE} "s|av_strstart(proto_name, \"file\", NULL))|av_strstart(proto_name, \"file\", NULL) \|\| av_strstart(proto_name, \"saf\", NULL))|g" libavformat/hls.c 1>>"${BASEDIR}"/build.log 2>&1
   echo -e "\nINFO: Enabled custom ffmpeg-kit protocols\n" 1>>"${BASEDIR}"/build.log 2>&1
 fi
 
@@ -474,7 +469,6 @@ fi
   ${CONFIGURE_POSTFIX} 1>>"${BASEDIR}"/build.log 2>&1
 
 if [[ $? -ne 0 ]]; then
-  echo -e "failed\n\nSee build.log for details\n"
   exit 1
 fi
 
@@ -482,18 +476,15 @@ if [[ -z ${NO_OUTPUT_REDIRECTION} ]]; then
   make -j$(get_cpu_count) 1>>"${BASEDIR}"/build.log 2>&1
 
   if [[ $? -ne 0 ]]; then
-    echo -e "failed\n\nSee build.log for details\n"
     exit 1
   fi
 else
   echo -e "started\n"
   make -j$(get_cpu_count)
 
+  echo -n -e "\n${LIB_NAME}: "
   if [[ $? -ne 0 ]]; then
-    echo -n -e "\n${LIB_NAME}: failed\n\nSee build.log for details\n"
     exit 1
-  else
-    echo -n -e "\n${LIB_NAME}: "
   fi
 fi
 
@@ -504,40 +495,16 @@ fi
 make install 1>>"${BASEDIR}"/build.log 2>&1
 
 if [[ $? -ne 0 ]]; then
-  echo -e "failed\n\nSee build.log for details\n"
   exit 1
 fi
 
 # MANUALLY ADD REQUIRED HEADERS
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/arm 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavutil/aarch64 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/x86 1>>"${BASEDIR}"/build.log 2>&1
-mkdir -p "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/arm 1>>"${BASEDIR}"/build.log 2>&1
+mkdir -p "${FFMPEG_LIBRARY_PATH}"/include 1>>"${BASEDIR}"/build.log 2>&1
 overwrite_file "${BASEDIR}"/src/ffmpeg/config.h "${FFMPEG_LIBRARY_PATH}"/include/config.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/x86/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/x86/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavcodec/arm/mathops.h "${FFMPEG_LIBRARY_PATH}"/include/libavcodec/arm/mathops.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/network.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/network.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/os_support.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/os_support.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavformat/url.h "${FFMPEG_LIBRARY_PATH}"/include/libavformat/url.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/attributes_internal.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/attributes_internal.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/bprint.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/bprint.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/getenv_utf8.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/getenv_utf8.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/internal.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/internal.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/libm.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/libm.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/reverse.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/reverse.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/thread.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/thread.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/asm.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/asm.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/arm/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/arm/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/aarch64/timer.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/aarch64/timer.h 1>>"${BASEDIR}"/build.log 2>&1
-overwrite_file "${BASEDIR}"/src/ffmpeg/libavutil/x86/emms.h "${FFMPEG_LIBRARY_PATH}"/include/libavutil/x86/emms.h 1>>"${BASEDIR}"/build.log 2>&1
+rsync -am --include='*.h' --include='*/' --exclude='*' "${BASEDIR}"/src/ffmpeg/ "${FFMPEG_LIBRARY_PATH}"/include/ 1>>"${BASEDIR}"/build.log 2>&1
 
 if [ $? -eq 0 ]; then
   echo "ok"
 else
-  echo -e "failed\n\nSee build.log for details\n"
   exit 1
 fi

@@ -19,7 +19,7 @@ When compilation ends, libraries are created under the prebuilt folder.\n"
   echo -e "Usage: ./$COMMAND [OPTION]...\n"
   echo -e "Specify environment variables as VARIABLE=VALUE to override default build options.\n"
 
-  display_help_options "  -x, --xcframework\t\tbuild xcframework bundles instead of framework bundles" "  -l, --lts			build lts packages to support sdk 10.12+ devices" "      --target=macos sdk version\toverride minimum deployment target [10.15]"
+  display_help_options "  -x, --xcframework\t\tbuild xcframework bundles instead of framework bundles" "      --jobs=N\t\t\t\tnumber of jobs to run [auto]" "      --target=macos sdk version\toverride minimum deployment target [10.15]"
   display_help_licensing
 
   echo -e "Architectures:"
@@ -57,35 +57,19 @@ enable_main_build() {
   fi
 }
 
-enable_lts_build() {
-  export FFMPEG_KIT_LTS_BUILD="1"
-
-  if [[ $(compare_versions "$DETECTED_MACOS_SDK_VERSION" "10.12") -le 0 ]]; then
-    export MACOS_MIN_VERSION=$DETECTED_MACOS_SDK_VERSION
-  else
-
-    # XCODE 8.0 HAS MACOS SDK 10.12
-    export MACOS_MIN_VERSION=10.12
-  fi
-}
-
 get_common_includes() {
   echo "-I${SDK_PATH}/usr/include"
 }
 
 get_common_cflags() {
-  if [[ -n ${FFMPEG_KIT_LTS_BUILD} ]]; then
-    local LTS_BUILD_FLAG="-DFFMPEG_KIT_LTS "
-  fi
-
   local BUILD_DATE="-DFFMPEG_KIT_BUILD_DATE=$(date +%Y%m%d 2>>"${BASEDIR}"/build.log)"
 
   case ${ARCH} in
   arm64)
-    echo "-fstrict-aliasing -DMACOSX ${LTS_BUILD_FLAG}${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
+    echo "-fstrict-aliasing -DMACOSX $(get_min_sdk_version_flag) ${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
     ;;
   *)
-    echo "-fstrict-aliasing -DMACOSX ${LTS_BUILD_FLAG}${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
+    echo "-fstrict-aliasing -DMACOSX $(get_min_sdk_version_flag) ${BUILD_DATE} -Wno-incompatible-function-pointer-types -isysroot ${SDK_PATH}"
     ;;
   esac
 }
@@ -195,7 +179,7 @@ get_cflags() {
   local MIN_VERSION_FLAGS=$(get_min_version_cflags "$1")
   local COMMON_INCLUDES=$(get_common_includes)
 
-  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${MIN_VERSION_FLAGS} ${COMMON_INCLUDES}"
+  echo "${ARCH_FLAGS} ${APP_FLAGS} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${MIN_VERSION_FLAGS} ${COMMON_INCLUDES} ${EXTRA_CFLAGS}"
 }
 
 get_asmflags() {
@@ -214,7 +198,7 @@ get_asmflags() {
 }
 
 get_cxxflags() {
-  local COMMON_CFLAGS="$(get_common_cflags "$1") $(get_common_includes "$1") $(get_arch_specific_cflags) $(get_min_version_cflags "$1")"
+  local COMMON_CFLAGS="$(get_common_cflags "$1") $(get_common_includes "$1") $(get_arch_specific_cflags) $(get_min_version_cflags "$1") $(get_min_sdk_version_flag)"
   if [[ -z ${FFMPEG_KIT_DEBUG} ]]; then
     local OPTIMIZATION_FLAGS="-Oz"
   else
@@ -225,31 +209,31 @@ get_cxxflags() {
 
   case $1 in
   gnutls)
-    echo "-std=c++11 -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libaom)
-    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libilbc)
-    echo "-std=c++14 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++14 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   libwebp | xvidcore)
-    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} -fno-common -DPIC ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} -fno-common -DPIC ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   opencore-amr)
-    echo "-fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   rubberband)
-    echo "-fno-rtti -Wno-c++11-narrowing ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-fno-rtti -Wno-c++11-narrowing ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   srt | tesseract | zimg)
-    echo "-std=c++11 ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   x265)
-    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS}"
+    echo "-std=c++11 -fno-exceptions ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   *)
-    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "-std=c++11 -fno-exceptions -fno-rtti ${BITCODE_FLAGS} ${COMMON_CFLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_CXXFLAGS}"
     ;;
   esac
 }
@@ -259,7 +243,13 @@ get_common_linked_libraries() {
 }
 
 get_common_ldflags() {
-  echo "-isysroot ${SDK_PATH} $(get_min_version_cflags)"
+
+  # WORKAROUND FOR XCODE 15.0/15.0.1
+  if [[ $(compare_versions "$DETECTED_MACOS_SDK_VERSION" "14.0") -eq 0 ]]; then
+    echo "-isysroot ${SDK_PATH} $(get_min_version_cflags) -Wl,-ld_classic"
+  else
+    echo "-isysroot ${SDK_PATH} $(get_min_version_cflags)"
+  fi
 }
 
 get_size_optimization_ldflags() {
@@ -302,15 +292,15 @@ get_ldflags() {
   ffmpeg-kit)
     case ${ARCH} in
     arm64)
-      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS}"
+      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
       ;;
     x86-64)
-      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS}"
+      echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
       ;;
     esac
     ;;
   *)
-    echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS}"
+    echo "${ARCH_FLAGS} ${LINKED_LIBRARIES} ${COMMON_FLAGS} ${OPTIMIZATION_FLAGS} ${EXTRA_LDFLAGS}"
     ;;
   esac
 }
